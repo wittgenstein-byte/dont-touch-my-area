@@ -1,240 +1,177 @@
 import turtle
 import time
-import random
+from collections import deque
 
-delay = 0.1
-score1 = 0
-score2 = 0
+SCREEN_SIZE = 600
+GRID_SIZE = 40
+COLS = SCREEN_SIZE // GRID_SIZE  # 30 ช่อง
+ROWS = SCREEN_SIZE // GRID_SIZE  # 30 ช่อง
 
-# Screen setup
+# ค่าสถานะใน 2D Array:
+# 0 = ช่องว่าง (Empty)
+# 1 = แดนถาวร P1,  2 = แดนถาวร P2
+# 3 = หางชั่วคราว P1, 4 = หางชั่วคราว P2
+grid = [[0 for _ in range(COLS)] for _ in range(ROWS)]
+
+# ===========================================
+# SCREEN & RENDERER SETUP
+# ===========================================
 wn = turtle.Screen()
-wn.title("Snake Game - 2 Players")
-wn.bgcolor("black")
-wn.setup(width=1000, height=1000)
+wn.title("2D Array Territory Fill")
+wn.bgcolor("#1a1a1a")
+wn.setup(width=SCREEN_SIZE, height=SCREEN_SIZE)
 wn.tracer(0)
 
-# ===========================================
-# SNAKE 1 (Green - WASD)
-# ===========================================
-head1 = turtle.Turtle()
-head1.speed(0)
-head1.shape("square")
-head1.color("green")
-head1.penup()
-head1.goto(-100, 0)
-head1.direction = "stop"
-segments1 = []
+# เต่าสำหรับวาดช่องสี่เหลี่ยมตามค่าใน Grid
+drawer = turtle.Turtle()
+drawer.hideturtle()
+drawer.speed(0)
+drawer.shape("square")
+drawer.shapesize(stretch_wid=GRID_SIZE / 20, stretch_len=GRID_SIZE / 20)
+drawer.penup()
 
 # ===========================================
-# SNAKE 2 (Orange - Arrow Keys)
+# GRID COORDINATE HELPERS
 # ===========================================
-head2 = turtle.Turtle()
-head2.speed(0)
-head2.shape("square")
-head2.color("orange")
-head2.penup()
-head2.goto(100, 0)
-head2.direction = "stop"
-segments2 = []
+def screen_to_grid(x, y):
+    """แปลงพิกัดหน้าจอ (Pixel) เป็น Index ของ Matrix [row][col]"""
+    c = int((x + (SCREEN_SIZE / 2)) // GRID_SIZE)
+    r = int(((SCREEN_SIZE / 2) - y) // GRID_SIZE)
+    return max(0, min(ROWS - 1, r)), max(0, min(COLS - 1, c))
 
-# ===========================================
-# FOOD
-# ===========================================
-food = turtle.Turtle()
-food.speed(0)
-food.shape("circle")
-food.color("red")
-food.penup()
-food.goto(0, 100)
+def grid_to_screen(r, c):
+    """แปลง Index ของ Matrix เป็นพิกัดกึ่งกลางช่องบนหน้าจอ"""
+    x = (c * GRID_SIZE) - (SCREEN_SIZE / 2) + (GRID_SIZE / 2)
+    y = (SCREEN_SIZE / 2) - (r * GRID_SIZE) - (GRID_SIZE / 2)
+    return x, y
 
 # ===========================================
-# SCOREBOARD
+# MATRIX FLOOD FILL LOGIC
 # ===========================================
-pen = turtle.Turtle()
-pen.speed(0)
-pen.color("white")
-pen.penup()
-pen.hideturtle()
-pen.goto(0, 260)
-
-def update_scoreboard():
-    pen.clear()
-    pen.write(f"Player 1 (Green): {score1}    Player 2 (Orange): {score2}", 
-              align="center", font=("Courier", 16, "bold"))
-
-update_scoreboard()
-
-# ===========================================
-# MOVEMENT FUNCTIONS
-# ===========================================
-# Controls for Player 1
-def p1_up():
-    if head1.direction != "down":
-        head1.direction = "up"
-
-def p1_down():
-    if head1.direction != "up":
-        head1.direction = "down"
-
-def p1_left():
-    if head1.direction != "right":
-        head1.direction = "left"
-
-def p1_right():
-    if head1.direction != "left":
-        head1.direction = "right"
-
-# Controls for Player 2
-def p2_up():
-    if head2.direction != "down":
-        head2.direction = "up"
-
-def p2_down():
-    if head2.direction != "up":
-        head2.direction = "down"
-
-def p2_left():
-    if head2.direction != "right":
-        head2.direction = "left"
-
-def p2_right():
-    if head2.direction != "left":
-        head2.direction = "right"
-
-def move_snake(head):
-    if head.direction == "up":
-        head.sety(head.ycor() + 20)
-    elif head.direction == "down":
-        head.sety(head.ycor() - 20)
-    elif head.direction == "left":
-        head.setx(head.xcor() - 20)
-    elif head.direction == "right":
-        head.setx(head.xcor() + 20)
-
-def reset_game():
-    global score1, score2, delay
-    time.sleep(1)
+def close_loop_and_fill(player_id, trail_id):
+    """
+    เมื่อหัวชนหาง:
+    1. นำน้ำท่วมจากขอบนอกของ Matrix (ช่องว่างที่ไม่ถูกล้อม)
+    2. ช่องด้านในที่น้ำเข้าไม่ถึง + เส้น trail ทั้งหมด จะกลายเป็น player_id ถาวร
+    """
+    # ผนังปิดล้อม = ช่องที่เป็นแดนตัวเอง หรือเส้นหางของตัวเอง
+    boundary_values = {player_id, trail_id}
     
-    # รีเซ็ตตำแหน่งหัว
-    head1.goto(-100, 0)
-    head1.direction = "stop"
-    head2.goto(100, 0)
-    head2.direction = "stop"
+    visited = [[False for _ in range(COLS)] for _ in range(ROWS)]
+    queue = deque()
 
-    # ซ่อนลำตัวเก่า
-    for s in segments1:
-        s.goto(1000, 1000)
-    segments1.clear()
+    # ใส่ขอบทั้ง 4 ด้านของ Matrix เข้าคิวเริ่มต้น
+    for r in range(ROWS):
+        for c in [0, COLS - 1]:
+            if grid[r][c] not in boundary_values:
+                visited[r][c] = True
+                queue.append((r, c))
+                
+    for c in range(COLS):
+        for r in [0, ROWS - 1]:
+            if grid[r][c] not in boundary_values and not visited[r][c]:
+                visited[r][c] = True
+                queue.append((r, c))
 
-    for s in segments2:
-        s.goto(1000, 1000)
-    segments2.clear()
+    # จำลองน้ำท่วมเฉพาะบริเวณด้านนอก
+    while queue:
+        cr, cc = queue.popleft()
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = cr + dr, cc + dc
+            if 0 <= nr < ROWS and 0 <= nc < COLS:
+                if not visited[nr][nc] and grid[nr][nc] not in boundary_values:
+                    visited[nr][nc] = True
+                    queue.append((nr, nc))
 
-    score1 = 0
-    score2 = 0
-    delay = 0.1
-    update_scoreboard()
+    # อัปเดต Matrix: ช่องที่ไม่ถูกน้ำท่วม (visited == False) หรือเป็น trail ให้เป็นแดนถาวรทั้งหมด
+    for r in range(ROWS):
+        for c in range(COLS):
+            if not visited[r][c] or grid[r][c] == trail_id:
+                grid[r][c] = player_id
+
+def render_grid():
+    """เรนเดอร์สีจาก 2D Matrix"""
+    drawer.clear()
+    COLOR_MAP = {
+        1: "#e74c3c",  # P1 แดนถาวร (แดงเข้ม)
+        3: "#ff7675",  # P1 หางชั่วคราว (แดงอ่อน)
+        2: "#0984e3",  # P2 แดนถาวร (น้ำเงินเข้ม)
+        4: "#74b9ff"   # P2 หางชั่วคราว (ฟ้าอ่อน)
+    }
+    for r in range(ROWS):
+        for c in range(COLS):
+            val = grid[r][c]
+            if val in COLOR_MAP:
+                x, y = grid_to_screen(r, c)
+                drawer.goto(x, y)
+                drawer.color(COLOR_MAP[val])
+                drawer.stamp()
 
 # ===========================================
-# KEYBOARD BINDINGS
+# PLAYER SETUP
 # ===========================================
+p1 = turtle.Turtle()
+p1.shape("square")
+p1.color("white", "#c0392b")
+p1.penup()
+p1.direction = "stop"
+
+# วางตำแหน่งเริ่มต้น P1
+start_r, start_c = ROWS // 2, COLS // 4
+p1.goto(grid_to_screen(start_r, start_c))
+grid[start_r][start_c] = 1
+
+# ===========================================
+# CONTROLS
+# ===========================================
+def go_up():
+    if p1.direction != "down": p1.direction = "up"
+def go_down():
+    if p1.direction != "up": p1.direction = "down"
+def go_left():
+    if p1.direction != "right": p1.direction = "left"
+def go_right():
+    if p1.direction != "left": p1.direction = "right"
+
 wn.listen()
-
-# Player 1: WASD
-wn.onkeypress(p1_up, "w")
-wn.onkeypress(p1_up, "W")
-wn.onkeypress(p1_down, "s")
-wn.onkeypress(p1_down, "S")
-wn.onkeypress(p1_left, "a")
-wn.onkeypress(p1_left, "A")
-wn.onkeypress(p1_right, "d")
-wn.onkeypress(p1_right, "D")
-
-# Player 2: Arrow Keys
-wn.onkeypress(p2_up, "Up")
-wn.onkeypress(p2_down, "Down")
-wn.onkeypress(p2_left, "Left")
-wn.onkeypress(p2_right, "Right")
+wn.onkeypress(go_up, "Up")
+wn.onkeypress(go_down, "Down")
+wn.onkeypress(go_left, "Left")
+wn.onkeypress(go_right, "Right")
+wn.onkeypress(go_up, "w")
+wn.onkeypress(go_down, "s")
+wn.onkeypress(go_left, "a")
+wn.onkeypress(go_right, "d")
 
 # ===========================================
-# MAIN GAME LOOP
+# GAME LOOP
 # ===========================================
 while True:
+    if p1.direction != "stop":
+        curr_r, curr_c = screen_to_grid(p1.xcor(), p1.ycor())
+        
+        # คำนวณพิกัดก้าวถัดไป
+        next_r, next_c = curr_r, curr_c
+        if p1.direction == "up": next_r -= 1
+        elif p1.direction == "down": next_r += 1
+        elif p1.direction == "left": next_c -= 1
+        elif p1.direction == "right": next_c += 1
+
+        # ขอบจอ
+        if 0 <= next_r < ROWS and 0 <= next_c < COLS:
+            target_cell = grid[next_r][next_c]
+            
+            # ย้ายหัว
+            p1.goto(grid_to_screen(next_r, next_c))
+
+            # ตรวจสอบว่าหัวชนหางตัวเอง (3) หรือชนแดนเดิม (1) ขณะที่มีหางอยู่
+            if target_cell in (1, 3):
+                # เติมเต็มและรวมหางเป็นพื้นที่เดียวกัน
+                close_loop_and_fill(player_id=1, trail_id=3)
+            else:
+                # ยังไม่ชน: ปั๊มค่าช่องใหม่เป็นหางชั่วคราว
+                grid[next_r][next_c] = 3
+
+    render_grid()
     wn.update()
-
-    # 1. เช็กการชนขอบจอ (กว้าง 800 สูง 600 -> ขอบคือ x: ±390, y: ±290)
-    if (abs(head1.xcor()) > 390 or abs(head1.ycor()) > 290 or
-        abs(head2.xcor()) > 390 or abs(head2.ycor()) > 290):
-        reset_game()
-
-    # 2. กินอาหาร: Player 1
-    if head1.distance(food) < 20:
-        food.goto(random.randint(-370, 370), random.randint(-270, 240))
-        new_segment = turtle.Turtle()
-        new_segment.speed(0)
-        new_segment.shape("square")
-        new_segment.color("#32CD32")  # เขียวอ่อน
-        new_segment.penup()
-        segments1.append(new_segment)
-        score1 += 10
-        delay = max(0.04, delay - 0.002)
-        update_scoreboard()
-
-    # 3. กินอาหาร: Player 2
-    if head2.distance(food) < 20:
-        food.goto(random.randint(-370, 370), random.randint(-270, 240))
-        new_segment = turtle.Turtle()
-        new_segment.speed(0)
-        new_segment.shape("square")
-        new_segment.color("#FFA500")  # ส้มอ่อน
-        new_segment.penup()
-        segments2.append(new_segment)
-        score2 += 10
-        delay = max(0.04, delay - 0.002)
-        update_scoreboard()
-
-    # 4. ขยับลำตัวตามหัว (ไล่จากข้อสุดท้ายมาหาข้อแรก)
-    for i in range(len(segments1) - 1, 0, -1):
-        x = segments1[i - 1].xcor()
-        y = segments1[i - 1].ycor()
-        segments1[i].goto(x, y)
-    if len(segments1) > 0:
-        segments1[0].goto(head1.xcor(), head1.ycor())
-
-    for i in range(len(segments2) - 1, 0, -1):
-        x = segments2[i - 1].xcor()
-        y = segments2[i - 1].ycor()
-        segments2[i].goto(x, y)
-    if len(segments2) > 0:
-        segments2[0].goto(head2.xcor(), head2.ycor())
-
-    # 5. ขยับหัวงู
-    move_snake(head1)
-    move_snake(head2)
-
-    # 6. ตรวจการชนตัวเอง
-    for s in segments1:
-        if s.distance(head1) < 20:
-            reset_game()
-            break
-
-    for s in segments2:
-        if s.distance(head2) < 20:
-            reset_game()
-            break
-
-    # 7. ตรวจการชนกันเองระหว่าง 2 ผู้เล่น (หัวชนหัว หรือ หัวชนลำตัวอีกฝ่าย)
-    if head1.distance(head2) < 20:
-        reset_game()
-
-    for s in segments2:
-        if head1.distance(s) < 20:
-            reset_game()
-            break
-
-    for s in segments1:
-        if head2.distance(s) < 20:
-            reset_game()
-            break
-
-    time.sleep(delay)
+    time.sleep(0.1)
