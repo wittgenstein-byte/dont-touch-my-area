@@ -4,8 +4,8 @@ from collections import deque
 
 SCREEN_SIZE = 600
 GRID_SIZE = 40
-COLS = SCREEN_SIZE // GRID_SIZE  # 15 columns (600 // 40)
-ROWS = SCREEN_SIZE // GRID_SIZE  # 15 rows (600 // 40)
+COLS = SCREEN_SIZE // GRID_SIZE  # 15 columns
+ROWS = SCREEN_SIZE // GRID_SIZE  # 15 rows
 
 # Cell state values in the 2D array:
 # 0 = Empty cell
@@ -17,7 +17,7 @@ grid = [[0 for _ in range(COLS)] for _ in range(ROWS)]
 # SCREEN & RENDERER SETUP
 # ===========================================
 wn = turtle.Screen()
-wn.title("2D Array Territory Fill")
+wn.title("2D Array Territory Fill - 2 Players")
 wn.bgcolor("#1a1a1a")
 wn.setup(width=SCREEN_SIZE, height=SCREEN_SIZE)
 wn.tracer(0)
@@ -51,13 +51,11 @@ def grid_to_screen(r, c):
 def close_loop_and_fill(player_id, trail_id):
     """
     Called when a loop is closed:
-    1. Run a flood fill (BFS) from the matrix outer borders inward (unclaimed space).
+    1. Run a flood fill (BFS) from the matrix outer borders inward.
     2. Any internal cell unreachable by the flood fill, plus the trail itself,
-       is captured and converted to the player's permanent territory.
+       is converted into the player's permanent territory.
     """
-    # Enclosure boundary = current player's territory or active trail
     boundary_values = {player_id, trail_id}
-    
     visited = [[False for _ in range(COLS)] for _ in range(ROWS)]
     queue = deque()
 
@@ -75,7 +73,7 @@ def close_loop_and_fill(player_id, trail_id):
                 visited[r][c] = True
                 queue.append((r, c))
 
-    # Flood-fill only the outer exterior region
+    # Flood-fill the outer uncaptured area
     while queue:
         cr, cc = queue.popleft()
         for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
@@ -85,8 +83,7 @@ def close_loop_and_fill(player_id, trail_id):
                     visited[nr][nc] = True
                     queue.append((nr, nc))
 
-    # Update matrix: Any cell not reached by the outer flood fill (enclosed)
-    # or belonging to the trail is converted into permanent territory.
+    # Overwrite captured region and trails into permanent territory
     for r in range(ROWS):
         for c in range(COLS):
             if not visited[r][c] or grid[r][c] == trail_id:
@@ -111,7 +108,7 @@ def render_grid():
                 drawer.stamp()
 
 # ===========================================
-# PLAYER SETUP
+# PLAYER 1 SETUP (Red - Left Side)
 # ===========================================
 p1 = turtle.Turtle()
 p1.shape("square")
@@ -119,61 +116,92 @@ p1.color("white", "#c0392b")
 p1.penup()
 p1.direction = "stop"
 
-# Set P1 starting position
-start_r, start_c = ROWS // 2, COLS // 4
-p1.goto(grid_to_screen(start_r, start_c))
-grid[start_r][start_c] = 1
+p1_start_r, p1_start_c = ROWS // 2, COLS // 4
+p1.goto(grid_to_screen(p1_start_r, p1_start_c))
+grid[p1_start_r][p1_start_c] = 1
+
+# ===========================================
+# PLAYER 2 SETUP (Blue - Right Side)
+# ===========================================
+p2 = turtle.Turtle()
+p2.shape("square")
+p2.color("white", "#0865ac")
+p2.penup()
+p2.direction = "stop"
+
+p2_start_r, p2_start_c = ROWS // 2, (COLS * 3) // 4
+p2.goto(grid_to_screen(p2_start_r, p2_start_c))
+grid[p2_start_r][p2_start_c] = 2
 
 # ===========================================
 # CONTROLS
 # ===========================================
-def go_up():
+# Player 1: WASD
+def p1_up():
     if p1.direction != "down": p1.direction = "up"
-def go_down():
+def p1_down():
     if p1.direction != "up": p1.direction = "down"
-def go_left():
+def p1_left():
     if p1.direction != "right": p1.direction = "left"
-def go_right():
+def p1_right():
     if p1.direction != "left": p1.direction = "right"
 
+# Player 2: Arrow Keys
+def p2_up():
+    if p2.direction != "down": p2.direction = "up"
+def p2_down():
+    if p2.direction != "up": p2.direction = "down"
+def p2_left():
+    if p2.direction != "right": p2.direction = "left"
+def p2_right():
+    if p2.direction != "left": p2.direction = "right"
+
 wn.listen()
-wn.onkeypress(go_up, "Up")
-wn.onkeypress(go_down, "Down")
-wn.onkeypress(go_left, "Left")
-wn.onkeypress(go_right, "Right")
-wn.onkeypress(go_up, "w")
-wn.onkeypress(go_down, "s")
-wn.onkeypress(go_left, "a")
-wn.onkeypress(go_right, "d")
+# P1 key bindings
+wn.onkeypress(p1_up, "w")
+wn.onkeypress(p1_down, "s")
+wn.onkeypress(p1_left, "a")
+wn.onkeypress(p1_right, "d")
+
+# P2 key bindings
+wn.onkeypress(p2_up, "Up")
+wn.onkeypress(p2_down, "Down")
+wn.onkeypress(p2_left, "Left")
+wn.onkeypress(p2_right, "Right")
+
+# ===========================================
+# PLAYER STEP HELPER
+# ===========================================
+def step_player(player_turtle, player_id, trail_id):
+    if player_turtle.direction == "stop":
+        return
+
+    curr_r, curr_c = screen_to_grid(player_turtle.xcor(), player_turtle.ycor())
+    next_r, next_c = curr_r, curr_c
+
+    if player_turtle.direction == "up": next_r -= 1
+    elif player_turtle.direction == "down": next_r += 1
+    elif player_turtle.direction == "left": next_c -= 1
+    elif player_turtle.direction == "right": next_c += 1
+
+    # Keep within screen boundaries
+    if 0 <= next_r < ROWS and 0 <= next_c < COLS:
+        target_cell = grid[next_r][next_c]
+        player_turtle.goto(grid_to_screen(next_r, next_c))
+
+        # Returned to home territory or collided with own trail -> close the loop
+        if target_cell in (player_id, trail_id):
+            close_loop_and_fill(player_id, trail_id)
+        else:
+            # Leave temporary trail
+            grid[next_r][next_c] = trail_id
 
 # ===========================================
 # GAME LOOP
 # ===========================================
 while True:
-    if p1.direction != "stop":
-        curr_r, curr_c = screen_to_grid(p1.xcor(), p1.ycor())
-        
-        # Calculate next step coordinates
-        next_r, next_c = curr_r, curr_c
-        if p1.direction == "up": next_r -= 1
-        elif p1.direction == "down": next_r += 1
-        elif p1.direction == "left": next_c -= 1
-        elif p1.direction == "right": next_c += 1
-
-        # Keep movement within screen boundaries
-        if 0 <= next_r < ROWS and 0 <= next_c < COLS:
-            target_cell = grid[next_r][next_c]
-            
-            # Move player head
-            p1.goto(grid_to_screen(next_r, next_c))
-
-            # Check if player hits their own trail (3) or returns to territory (1)
-            if target_cell in (1, 3):
-                # Fill enclosed area and convert trail to territory
-                close_loop_and_fill(player_id=1, trail_id=3)
-            else:
-                # Mark empty cell as active trail
-                grid[next_r][next_c] = 3
+    step_player(p1, player_id=1, trail_id=3)
+    step_player(p2, player_id=2, trail_id=4)
 
     render_grid()
     wn.update()
