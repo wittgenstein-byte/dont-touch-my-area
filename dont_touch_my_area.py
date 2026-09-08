@@ -6,9 +6,10 @@ from collections import deque
 # SCREEN & RESOLUTION GRID SETTINGS
 # ===========================================
 SCREEN_SIZE = 600
-GRID_SIZE = 15                 # Smaller tile size = finer resolution
+GRID_SIZE = 15                  # Smaller tile size = finer resolution
 COLS = SCREEN_SIZE // GRID_SIZE  # 40 columns
 ROWS = SCREEN_SIZE // GRID_SIZE  # 40 rows
+TOTAL_CELLS = ROWS * COLS       # 1,600 total playable tiles
 
 # Cell states:
 # 0 = Empty, 1 = P1 Territory, 2 = P2 Territory
@@ -28,9 +29,9 @@ def set_cell(r, c, val):
 # SCREEN & RENDERER SETUP
 # ===========================================
 wn = turtle.Screen()
-wn.title("Don't Touch My Area - 40x40 Resolution Grid")
+wn.title("Don't Touch My Area - Territory Conquest")
 wn.bgcolor("#1a1a1a")
-wn.setup(width=SCREEN_SIZE + 40, height=SCREEN_SIZE + 40)
+wn.setup(width=SCREEN_SIZE + 40, height=SCREEN_SIZE + 90)  # Added top margin for HUD
 wn.tracer(0)
 
 # Stamp pool turtle (stamps only modified tiles)
@@ -44,6 +45,36 @@ stamper.penup()
 # Keep track of stamps per coordinate so old stamps can be cleared
 tile_stamps = {}
 
+# ===========================================
+# SCOREBOARD SETUP
+# ===========================================
+pen = turtle.Turtle()
+pen.hideturtle()
+pen.speed(0)
+pen.color("white")
+pen.penup()
+pen.goto(0, (SCREEN_SIZE / 2) + 12)
+
+# Keep track of prior scores to avoid redrawing text every tick
+last_score_p1 = -1
+last_score_p2 = -1
+
+def update_scoreboard():
+    """Counts permanent territory cells and renders point totals when values change."""
+    global last_score_p1, last_score_p2
+    p1_tiles = sum(row.count(1) for row in grid)
+    p2_tiles = sum(row.count(2) for row in grid)
+
+    if p1_tiles != last_score_p1 or p2_tiles != last_score_p2:
+        last_score_p1 = p1_tiles
+        last_score_p2 = p2_tiles
+
+        pen.clear()
+        pen.write(
+            f"P1 (Red): {p1_tiles} pts    |    P2 (Blue): {p2_tiles} pts",
+            align="center",
+            font=("Courier", 13, "bold")
+        )
 # ===========================================
 # GRID COORDINATE HELPERS
 # ===========================================
@@ -221,12 +252,15 @@ def step_player(player_turtle, player_id, trail_id):
             set_cell(next_r, next_c, trail_id)
 
 # ===========================================
-# GAME LOOP
+# INITIAL HUD DRAW & GAME LOOP
 # ===========================================
+update_scoreboard()
+
 while True:
     step_player(p1, player_id=1, trail_id=3)
     step_player(p2, player_id=2, trail_id=4)
 
     render_dirty_cells()
+    update_scoreboard()
     wn.update()
-    time.sleep(0.04)  # Faster cycle for higher resolution movement
+    time.sleep(0.04)
