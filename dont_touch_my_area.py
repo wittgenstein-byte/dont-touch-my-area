@@ -11,7 +11,7 @@ COLS = SCREEN_SIZE // GRID_SIZE  # 40 columns
 ROWS = SCREEN_SIZE // GRID_SIZE  # 40 rows
 TOTAL_CELLS = ROWS * COLS       # 1,600 total playable tiles
 
-# Cell states:
+# Cell states: List Comprehension
 # 0 = Empty, 1 = P1 Territory, 2 = P2 Territory
 # 3 = P1 Trail, 4 = P2 Trail
 grid = [[0 for _ in range(COLS)] for _ in range(ROWS)]
@@ -171,7 +171,7 @@ p1.direction = "stop"
 p1_start_r, p1_start_c = ROWS // 2, COLS // 5
 p1.goto(grid_to_screen(p1_start_r, p1_start_c))
 
-# Spawn initial 3x3 territory base
+# Spawn initial P1 3x3 territory base
 for dr in [-1, 0, 1]:
     for dc in [-1, 0, 1]:
         set_cell(p1_start_r + dr, p1_start_c + dc, 1)
@@ -189,7 +189,7 @@ p2.direction = "stop"
 p2_start_r, p2_start_c = ROWS // 2, (COLS * 4) // 5
 p2.goto(grid_to_screen(p2_start_r, p2_start_c))
 
-# Spawn initial 3x3 territory base
+# Spawn initial P2 3x3 territory base
 for dr in [-1, 0, 1]:
     for dc in [-1, 0, 1]:
         set_cell(p2_start_r + dr, p2_start_c + dc, 2)
@@ -245,7 +245,7 @@ def step_player(player_turtle, player_id, trail_id):
     if 0 <= next_r < ROWS and 0 <= next_c < COLS:
         target_cell = grid[next_r][next_c]
         player_turtle.goto(grid_to_screen(next_r, next_c))
-
+        # Returned to home territory or collided with own trail -> close the loop
         if target_cell in (player_id, trail_id):
             close_loop_and_fill(player_id, trail_id)
         else:
