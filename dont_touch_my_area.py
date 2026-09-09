@@ -1,6 +1,26 @@
+import os
 import turtle
 import time
 from collections import deque
+try:
+    import winsound
+except ImportError:
+    winsound = None
+
+# ===========================================
+# SOUND EFFECTS (SFX) SETUP
+# ===========================================
+SOUND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "asset", "sounds")
+
+def play_sfx(name):
+    """Plays a .wav sound effect asynchronously without blocking the Turtle game loop."""
+    if winsound:
+        path = os.path.join(SOUND_DIR, f"{name}.wav")
+        if os.path.exists(path):
+            try:
+                winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            except Exception:
+                pass
 
 # ===========================================
 # SCREEN & RESOLUTION GRID SETTINGS
@@ -43,6 +63,9 @@ wn = turtle.Screen()
 wn.title("Don't Touch My Area - Territory Conquest")
 wn.bgcolor("#1a1a1a")
 wn.setup(width=SCREEN_SIZE + 40, height=SCREEN_SIZE + 90)  # Added top margin for HUD
+bg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "asset", "bg.gif")
+if os.path.exists(bg_path):
+    wn.bgpic(bg_path)
 wn.tracer(0)
 
 # Stamp pool turtle (stamps only modified tiles)
@@ -118,6 +141,8 @@ def close_loop_and_fill(player_id, trail_id):
         for c in range(COLS):
             if not visited[r][c] or grid[r][c] == trail_id:
                 set_cell(r, c, player_id)
+
+    play_sfx("claim")
 
 # ===========================================
 # RENDERING
@@ -251,6 +276,15 @@ def trigger_game_over(winner_text, color=None):
     render_dirty_cells()
     draw_game_over(winner_text, color)
 
+    p1_tiles = sum(row.count(1) for row in grid)
+    p2_tiles = sum(row.count(2) for row in grid)
+    if winner_text and "DRAW" in winner_text:
+        play_sfx("game_over")
+    elif winner_text is None and p1_tiles == p2_tiles:
+        play_sfx("game_over")
+    else:
+        play_sfx("win")
+
 def update_game_step():
     """
     Simultaneously steps both players and evaluates all collisions:
@@ -303,6 +337,7 @@ def update_game_step():
     crossed_paths = (next_r1 == curr_r2 and next_c1 == curr_c2 and next_r2 == curr_r1 and next_c2 == curr_c1)
 
     if same_cell or crossed_paths:
+        play_sfx("hit")
         clear_trail(3)
         clear_trail(4)
         p1.is_trail_active = False
@@ -321,6 +356,7 @@ def update_game_step():
 
     if p1_cuts_p2 and p2_cuts_p1:
         # Both hit each other's tail in the same frame -> DRAW
+        play_sfx("hit")
         clear_trail(3)
         clear_trail(4)
         p1.is_trail_active = False
@@ -330,6 +366,7 @@ def update_game_step():
 
     if p1_cuts_p2:
         # P1 cuts P2's tail -> P2's tail disappears!
+        play_sfx("hit")
         clear_trail(4)
         p2.is_trail_active = False
         if COLLISION_MODE == "ELIMINATION":
@@ -340,6 +377,7 @@ def update_game_step():
 
     if p2_cuts_p1:
         # P2 cuts P1's tail -> P1's tail disappears!
+        play_sfx("hit")
         clear_trail(3)
         p1.is_trail_active = False
         if COLLISION_MODE == "ELIMINATION":
@@ -499,6 +537,10 @@ def update_hud():
         font=("Courier", 13, "bold")
     )
 
+    if 0 < time_left <= 5 and getattr(update_hud, "last_beep", None) != time_left:
+        update_hud.last_beep = time_left
+        play_sfx("click")
+
     if time_left <= 0:
         trigger_game_over(None, None)
 
@@ -543,20 +585,24 @@ def handle_click(x, y):
         # Check 10s button (-160 <= x <= -80, -70 <= y <= -30)
         if -160 <= x <= -80 and -70 <= y <= -30:
             selected_time = 10
+            play_sfx("click")
             draw_menu()
 
         # Check 30s button (-40 <= x <= 40, -70 <= y <= -30)
         elif -40 <= x <= 40 and -70 <= y <= -30:
             selected_time = 30
+            play_sfx("click")
             draw_menu()
 
         # Check 60s button (80 <= x <= 160, -70 <= y <= -30)
         elif 80 <= x <= 160 and -70 <= y <= -30:
             selected_time = 60
+            play_sfx("click")
             draw_menu()
 
         # Check Start button (-90 <= x <= 90, -155 <= y <= -105)
         elif -90 <= x <= 90 and -155 <= y <= -105:
+            play_sfx("click")
             pen.clear()
             reset_game()
             start_time_stamp = time.time()
@@ -565,6 +611,7 @@ def handle_click(x, y):
     elif game_state == "GAME_OVER":
         # Check Play Again button (-90 <= x <= 90, -85 <= y <= -35)
         if -90 <= x <= 90 and -85 <= y <= -35:
+            play_sfx("click")
             clear_trail(3)
             clear_trail(4)
             stamper.clearstamps()
@@ -586,7 +633,7 @@ def game_loop():
 
     try:
         wn.update()
-        wn.ontimer(game_loop, 30)
+        wn.ontimer(game_loop, 10)
     except (turtle.Terminator, Exception):
         pass
 
