@@ -168,6 +168,8 @@ p1.color("white", "#c0392b")
 p1.penup()
 p1.direction = "stop"
 
+# p1.is_trail_active = False  # Track if P1 is currently leaving a trail
+
 p1_start_r, p1_start_c = ROWS // 2, COLS // 5
 p1.goto(grid_to_screen(p1_start_r, p1_start_c))
 
@@ -185,6 +187,8 @@ p2.shapesize(stretch_wid=GRID_SIZE / 20, stretch_len=GRID_SIZE / 20)
 p2.color("white", "#0865ac")
 p2.penup()
 p2.direction = "stop"
+
+# p2.is_trail_active = False  # Track if P2 is currently leaving a trail
 
 p2_start_r, p2_start_c = ROWS // 2, (COLS * 4) // 5
 p2.goto(grid_to_screen(p2_start_r, p2_start_c))
@@ -229,6 +233,12 @@ wn.onkeypress(p2_right, "Right")
 # ===========================================
 # PLAYER STEP LOGIC
 # ===========================================
+def end_game(winner_text):      #Function to end the game and declare a winner
+    global game_over, winner
+
+    game_over = True
+    winner = winner_text
+
 def step_player(player_turtle, player_id, trail_id):
     if player_turtle.direction == "stop":
         return
@@ -244,6 +254,18 @@ def step_player(player_turtle, player_id, trail_id):
     # Grid boundaries check
     if 0 <= next_r < ROWS and 0 <= next_c < COLS:
         target_cell = grid[next_r][next_c]
+
+        enemy_trail = 4 if trail_id == 3 else 3     #Determine the enemy trail ID based on the current player's trail ID
+        if target_cell == enemy_trail:
+        
+            if player_id == 1:          #If player 1 hits player 2's trail, player 1 wins
+                end_game("PLAYER 1")
+            else:
+                end_game("PLAYER 2")    #If player 2 hits player 1's trail, player 2 wins
+        
+            return
+
+        
         player_turtle.goto(grid_to_screen(next_r, next_c))
         # Returned to home territory or collided with own trail -> close the loop
         if target_cell in (player_id, trail_id):
@@ -256,10 +278,17 @@ def step_player(player_turtle, player_id, trail_id):
 # ===========================================
 update_scoreboard()
 
-while True:
-    step_player(p1, player_id=1, trail_id=3)
-    step_player(p2, player_id=2, trail_id=4)
+game_over = False
+winner = None
 
+while True:
+
+    if not game_over:
+        step_player(p1, player_id=1, trail_id=3)
+        step_player(p2, player_id=2, trail_id=4)
+    else:
+        pen.goto(0, 0)
+        pen.write(f"GAME OVER! {winner} WINS!", align="center", font=("Courier", 20, "bold"))
     render_dirty_cells()
     update_scoreboard()
     wn.update()
