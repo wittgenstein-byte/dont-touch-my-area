@@ -8,8 +8,21 @@ except ImportError:
     winsound = None
 
 # ===========================================
-# SOUND EFFECTS (SFX) SETUP
+# Screen Setup
 # ===========================================
+SCREEN_SIZE = 600
+
+wn = turtle.Screen()
+wn.title("Don't Touch My Area - Territory Conquest")
+wn.bgcolor("#1a1a1a")
+wn.setup(width=SCREEN_SIZE + 40, height=SCREEN_SIZE + 90)  # Added top margin for HUD
+
+bg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "asset", "bg.gif")
+if os.path.exists(bg_path):
+    wn.bgpic(bg_path)
+wn.tracer(0)
+
+# Sound Effects (SFX) Setup
 SOUND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "asset", "sounds")
 
 def play_sfx(name):
@@ -22,45 +35,57 @@ def play_sfx(name):
             except Exception:
                 pass
 
-# ===========================================
-# SCREEN & RESOLUTION GRID SETTINGS
-# ===========================================
-# 100 x 100 tiles (10,000 total tiles)
-COLS = 100
-ROWS = 100
-TOTAL_CELLS = ROWS * COLS
-
-# Tile size (in pixels).
-# 6px per tile gives a 600x600 px arena.
-# Window size is 640x690 px, which fits comfortably on any screen without overflowing.
-GRID_SIZE = 6
-SCREEN_SIZE = COLS * GRID_SIZE  # 600 pixels
-
-# Cell states:
-# 0 = Empty, 1 = P1 Territory, 2 = P2 Territory
-# 3 = P1 Trail, 4 = P2 Trail
-grid = [[0 for _ in range(COLS)] for _ in range(ROWS)]
-
-# Game Management States: "MENU", "PLAYING", "GAME_OVER"
-game_state = "MENU"
-selected_time = 30  # Default 30 seconds
-time_left = 30
-start_time_stamp = 0
+# UI Pen for Menu, Scoreboard, and Game Over
+pen = turtle.Turtle()
+pen.hideturtle()
+pen.speed(0)
+pen.penup()
 
 # ===========================================
-# SCREEN & RENDERER SETUP
+# Game Entities
 # ===========================================
-wn = turtle.Screen()
-wn.title("Don't Touch My Area - Territory Conquest")
-wn.bgcolor("#1a1a1a")
-wn.setup(width=SCREEN_SIZE + 40, height=SCREEN_SIZE + 90)  # Added top margin for HUD
-bg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "asset", "bg.gif")
-if os.path.exists(bg_path):
-    wn.bgpic(bg_path)
-wn.tracer(0)
+# Player 1 Neon Aura (Neon Pink Halo)
+p1_glow = turtle.Turtle()
+p1_glow.hideturtle()
+p1_glow.speed(0)
+p1_glow.shape("square")
+p1_glow.shapesize(stretch_wid=10 / 20, stretch_len=10 / 20)
+p1_glow.color("#ff007f", "#ff007f")
+p1_glow.penup()
 
-# Two dedicated high-performance stampers:
-# 1. t_stamper: Stamps permanent territory using horizontal scanline strips (ultra-fast: 2-3 ms for thousands of cells!)
+# Player 1 Energy Core (White-hot core with neon rim)
+p1 = turtle.Turtle()
+p1.hideturtle()
+p1.speed(0)
+p1.shape("square")
+p1.shapesize(stretch_wid=5 / 20, stretch_len=5 / 20)
+p1.color("#ffb3d9", "#ffffff")
+p1.penup()
+p1.direction = "stop"
+p1.is_trail_active = False
+
+# Player 2 Neon Aura (Neon Cyan Halo)
+p2_glow = turtle.Turtle()
+p2_glow.hideturtle()
+p2_glow.speed(0)
+p2_glow.shape("square")
+p2_glow.shapesize(stretch_wid=10 / 20, stretch_len=10 / 20)
+p2_glow.color("#00f0ff", "#00f0ff")
+p2_glow.penup()
+
+# Player 2 Energy Core (White-hot core with neon rim)
+p2 = turtle.Turtle()
+p2.hideturtle()
+p2.speed(0)
+p2.shape("square")
+p2.shapesize(stretch_wid=5 / 20, stretch_len=5 / 20)
+p2.color("#b3f7ff", "#ffffff")
+p2.penup()
+p2.direction = "stop"
+p2.is_trail_active = False
+
+# Stampers:
+# 1. t_stamper: Stamps permanent territory using horizontal scanline strips (ultra-fast: 2-3 ms!)
 t_stamper = turtle.Turtle()
 t_stamper.hideturtle()
 t_stamper.speed(0)
@@ -72,13 +97,25 @@ tr_stamper = turtle.Turtle()
 tr_stamper.hideturtle()
 tr_stamper.speed(0)
 tr_stamper.shape("square")
-tr_stamper.shapesize(stretch_wid=GRID_SIZE / 20, stretch_len=GRID_SIZE / 20)
+tr_stamper.shapesize(stretch_wid=6 / 20, stretch_len=6 / 20)
 tr_stamper.penup()
 
-# Track active trail stamps per coordinate: (r, c) -> stamp_id
-trail_stamps = {}
-trail_stamps_owner = {}
+# ===========================================
+# Parameters & Physics
+# ===========================================
+# Grid & Map Parameters
+COLS = 100
+ROWS = 100
+TOTAL_CELLS = ROWS * COLS
+GRID_SIZE = 6
+BASE_RADIUS = 2
 
+# Collision Mode:
+# "ELIMINATION" (Default): Hitting enemy tail eliminates them (tail vanishes) & attacker wins!
+# "RESPAWN": Hitting enemy tail wipes their tail (ชนหางหาย) & sends them back to base to keep playing!
+COLLISION_MODE = "ELIMINATION"
+
+# Cyberpunk Neon Color Palette
 COLOR_MAP = {
     1: "#99003d",  # P1 permanent territory (deep neon ruby)
     2: "#004b87",  # P2 permanent territory (deep cyber cobalt)
@@ -86,15 +123,17 @@ COLOR_MAP = {
     4: "#00f0ff"   # P2 trail (electric neon cyan)
 }
 
-# UI Pen for Menu, Scoreboard, and Game Over
-pen = turtle.Turtle()
-pen.hideturtle()
-pen.speed(0)
-pen.penup()
+# Game Management States: "MENU", "PLAYING", "GAME_OVER"
+grid = [[0 for _ in range(COLS)] for _ in range(ROWS)]
+game_state = "MENU"
+selected_time = 30  # Default 30 seconds
+time_left = 30
+start_time_stamp = 0
 
-# ===========================================
-# GRID COORDINATE HELPERS
-# ===========================================
+# Trail stamp tracker: (r, c) -> stamp_id
+trail_stamps = {}
+trail_stamps_owner = {}
+
 def screen_to_grid(x, y):
     """Converts screen pixel coordinates to matrix indices [row][col]."""
     c = int((x + (SCREEN_SIZE / 2)) // GRID_SIZE)
@@ -151,9 +190,6 @@ def drop_trail_stamp(r, c, trail_id, player_id):
     trail_stamps[(r, c)] = sid
     trail_stamps_owner[(r, c)] = player_id
 
-# ===========================================
-# HIGH-SPEED BFS FLOOD FILL LOGIC
-# ===========================================
 def close_loop_and_fill(player_id, trail_id):
     """
     High-performance BFS flood fill:
@@ -163,12 +199,10 @@ def close_loop_and_fill(player_id, trail_id):
     boundary_1 = player_id
     boundary_2 = trail_id
 
-    # Fast flat bytearray for visited state
     visited = bytearray(TOTAL_CELLS)
     queue = deque()
 
     # Seed outer borders
-    # Left and Right borders
     for r in range(ROWS):
         row_offset = r * COLS
         for c in (0, COLS - 1):
@@ -178,7 +212,6 @@ def close_loop_and_fill(player_id, trail_id):
                 visited[idx] = 1
                 queue.append(idx)
 
-    # Top and Bottom borders
     for c in range(COLS):
         for r in (0, ROWS - 1):
             idx = r * COLS + c
@@ -248,106 +281,6 @@ def close_loop_and_fill(player_id, trail_id):
         render_captured_area(captured_cells, player_id)
 
     play_sfx("claim")
-
-# ===========================================
-# NEON PLAYER SETUP
-# ===========================================
-# Player 1 Neon Aura (Neon Pink Halo)
-p1_glow = turtle.Turtle()
-p1_glow.hideturtle()
-p1_glow.speed(0)
-p1_glow.shape("square")
-p1_glow.shapesize(stretch_wid=(GRID_SIZE + 4) / 20, stretch_len=(GRID_SIZE + 4) / 20)
-p1_glow.color("#ff007f", "#ff007f")
-p1_glow.penup()
-
-# Player 1 Energy Core (White-hot core with neon rim)
-p1 = turtle.Turtle()
-p1.hideturtle()
-p1.speed(0)
-p1.shape("square")
-p1.shapesize(stretch_wid=(GRID_SIZE - 1) / 20, stretch_len=(GRID_SIZE - 1) / 20)
-p1.color("#ffb3d9", "#ffffff")
-p1.penup()
-p1.direction = "stop"
-p1.is_trail_active = False
-
-# Player 2 Neon Aura (Neon Cyan Halo)
-p2_glow = turtle.Turtle()
-p2_glow.hideturtle()
-p2_glow.speed(0)
-p2_glow.shape("square")
-p2_glow.shapesize(stretch_wid=(GRID_SIZE + 4) / 20, stretch_len=(GRID_SIZE + 4) / 20)
-p2_glow.color("#00f0ff", "#00f0ff")
-p2_glow.penup()
-
-# Player 2 Energy Core (White-hot core with neon rim)
-p2 = turtle.Turtle()
-p2.hideturtle()
-p2.speed(0)
-p2.shape("square")
-p2.shapesize(stretch_wid=(GRID_SIZE - 1) / 20, stretch_len=(GRID_SIZE - 1) / 20)
-p2.color("#b3f7ff", "#ffffff")
-p2.penup()
-p2.direction = "stop"
-p2.is_trail_active = False
-
-# ===========================================
-# CONTROLS
-# ===========================================
-def p1_up():
-    if game_state == "PLAYING" and p1.direction != "down":
-        p1.direction = "up"
-
-def p1_down():
-    if game_state == "PLAYING" and p1.direction != "up":
-        p1.direction = "down"
-
-def p1_left():
-    if game_state == "PLAYING" and p1.direction != "right":
-        p1.direction = "left"
-
-def p1_right():
-    if game_state == "PLAYING" and p1.direction != "left":
-        p1.direction = "right"
-
-def p2_up():
-    if game_state == "PLAYING" and p2.direction != "down":
-        p2.direction = "up"
-
-def p2_down():
-    if game_state == "PLAYING" and p2.direction != "up":
-        p2.direction = "down"
-
-def p2_left():
-    if game_state == "PLAYING" and p2.direction != "right":
-        p2.direction = "left"
-
-def p2_right():
-    if game_state == "PLAYING" and p2.direction != "left":
-        p2.direction = "right"
-
-wn.listen()
-wn.onkeypress(p1_up, "w")
-wn.onkeypress(p1_down, "s")
-wn.onkeypress(p1_left, "a")
-wn.onkeypress(p1_right, "d")
-wn.onkeypress(p1_up, "W")
-wn.onkeypress(p1_down, "S")
-wn.onkeypress(p1_left, "A")
-wn.onkeypress(p1_right, "D")
-wn.onkeypress(p2_up, "Up")
-wn.onkeypress(p2_down, "Down")
-wn.onkeypress(p2_left, "Left")
-wn.onkeypress(p2_right, "Right")
-
-# ===========================================
-# COLLISION & PLAYER STEP LOGIC
-# ===========================================
-# Collision Mode:
-# "ELIMINATION" (Default): Hitting enemy tail eliminates them (tail vanishes) & attacker wins!
-# "RESPAWN": Hitting enemy tail wipes their tail (ชนหางหาย) & sends them back to base to keep playing until time ends!
-COLLISION_MODE = "ELIMINATION"
 
 def clear_trail(trail_id):
     """Wipes all cells of trail_id from the grid and clears trail stamps immediately (ชนหางหาย)."""
@@ -459,7 +392,7 @@ def update_game_step():
         clear_trail(4)
         p1.is_trail_active = False
         p2.is_trail_active = False
-        trigger_game_over("IT'S A DRAW! (HEAD-ON COLLISION)", "#f1c40f")
+        trigger_game_over("IT'S A DRAW! (HEAD-ON COLLISION)", "#ffe600")
         return
 
     # ---------------------------------------------------------
@@ -478,7 +411,7 @@ def update_game_step():
         clear_trail(4)
         p1.is_trail_active = False
         p2.is_trail_active = False
-        trigger_game_over("IT'S A DRAW! (MUTUAL TAIL CUT)", "#f1c40f")
+        trigger_game_over("IT'S A DRAW! (MUTUAL TAIL CUT)", "#ffe600")
         return
 
     if p1_cuts_p2:
@@ -538,8 +471,144 @@ def update_game_step():
             drop_trail_stamp(next_r2, next_c2, 4, 2)
             p2.is_trail_active = True
 
+def reset_game():
+    """Resets grid and player states for a new match."""
+    global grid
+
+    grid = [[0 for _ in range(COLS)] for _ in range(ROWS)]
+    t_stamper.clearstamps()
+    tr_stamper.clearstamps()
+    trail_stamps.clear()
+    trail_stamps_owner.clear()
+
+    # Reset Players
+    p1_start_r, p1_start_c = ROWS // 2, COLS // 5
+    pos1 = grid_to_screen(p1_start_r, p1_start_c)
+    p1.goto(pos1)
+    p1_glow.goto(pos1)
+    p1.direction = "stop"
+    p1.is_trail_active = False
+    p1_glow.showturtle()
+    p1.showturtle()
+
+    p2_start_r, p2_start_c = ROWS // 2, (COLS * 4) // 5
+    pos2 = grid_to_screen(p2_start_r, p2_start_c)
+    p2.goto(pos2)
+    p2_glow.goto(pos2)
+    p2.direction = "stop"
+    p2.is_trail_active = False
+    p2_glow.showturtle()
+    p2.showturtle()
+
+    # Spawn initial territory bases (5x5 tiles for comfortable control on 100x100 grid)
+    p1_base = []
+    p2_base = []
+    for dr in range(-BASE_RADIUS, BASE_RADIUS + 1):
+        for dc in range(-BASE_RADIUS, BASE_RADIUS + 1):
+            r1, c1 = p1_start_r + dr, p1_start_c + dc
+            r2, c2 = p2_start_r + dr, p2_start_c + dc
+            grid[r1][c1] = 1
+            p1_base.append((r1, c1))
+            grid[r2][c2] = 2
+            p2_base.append((r2, c2))
+
+    render_captured_area(p1_base, 1)
+    render_captured_area(p2_base, 2)
+
 # ===========================================
-# UI & MENU DRAWING FUNCTIONS
+# Input Handling
+# ===========================================
+def p1_up():
+    if game_state == "PLAYING" and p1.direction != "down":
+        p1.direction = "up"
+
+def p1_down():
+    if game_state == "PLAYING" and p1.direction != "up":
+        p1.direction = "down"
+
+def p1_left():
+    if game_state == "PLAYING" and p1.direction != "right":
+        p1.direction = "left"
+
+def p1_right():
+    if game_state == "PLAYING" and p1.direction != "left":
+        p1.direction = "right"
+
+def p2_up():
+    if game_state == "PLAYING" and p2.direction != "down":
+        p2.direction = "up"
+
+def p2_down():
+    if game_state == "PLAYING" and p2.direction != "up":
+        p2.direction = "down"
+
+def p2_left():
+    if game_state == "PLAYING" and p2.direction != "right":
+        p2.direction = "left"
+
+def p2_right():
+    if game_state == "PLAYING" and p2.direction != "left":
+        p2.direction = "right"
+
+wn.listen()
+wn.onkeypress(p1_up, "w")
+wn.onkeypress(p1_down, "s")
+wn.onkeypress(p1_left, "a")
+wn.onkeypress(p1_right, "d")
+wn.onkeypress(p1_up, "W")
+wn.onkeypress(p1_down, "S")
+wn.onkeypress(p1_left, "A")
+wn.onkeypress(p1_right, "D")
+wn.onkeypress(p2_up, "Up")
+wn.onkeypress(p2_down, "Down")
+wn.onkeypress(p2_left, "Left")
+wn.onkeypress(p2_right, "Right")
+
+def handle_click(x, y):
+    global game_state, selected_time, start_time_stamp
+
+    if game_state == "MENU":
+        # Check 10s button (-160 <= x <= -80, -70 <= y <= -30)
+        if -160 <= x <= -80 and -70 <= y <= -30:
+            selected_time = 10
+            play_sfx("click")
+            draw_menu()
+
+        # Check 30s button (-40 <= x <= 40, -70 <= y <= -30)
+        elif -40 <= x <= 40 and -70 <= y <= -30:
+            selected_time = 30
+            play_sfx("click")
+            draw_menu()
+
+        # Check 60s button (80 <= x <= 160, -70 <= y <= -30)
+        elif 80 <= x <= 160 and -70 <= y <= -30:
+            selected_time = 60
+            play_sfx("click")
+            draw_menu()
+
+        # Check Start button (-90 <= x <= 90, -155 <= y <= -105)
+        elif -90 <= x <= 90 and -155 <= y <= -105:
+            play_sfx("click")
+            pen.clear()
+            reset_game()
+            start_time_stamp = time.time()
+            game_state = "PLAYING"
+
+    elif game_state == "GAME_OVER":
+        # Check Play Again button (-90 <= x <= 90, -85 <= y <= -35)
+        if -90 <= x <= 90 and -85 <= y <= -35:
+            play_sfx("click")
+            clear_trail(3)
+            clear_trail(4)
+            t_stamper.clearstamps()
+            tr_stamper.clearstamps()
+            game_state = "MENU"
+            draw_menu()
+
+wn.onscreenclick(handle_click)
+
+# ===========================================
+# Main Game Loop
 # ===========================================
 def draw_button(x, y, w, h, text, bg_color, text_color="white"):
     """Draws a UI button with specified dimensions and colors."""
@@ -562,7 +631,7 @@ def draw_menu():
     """Renders Main Menu Screen with neon theme."""
     pen.clear()
 
-    # Title - Neon Gold/Yellow (neutral, distinct from P1 Pink and P2 Cyan)
+    # Title - Neon Gold/Yellow
     pen.goto(0, 160)
     pen.color("#ffe600")
     pen.write("DON'T TOUCH MY AREA", align="center", font=("Courier", 26, "bold"))
@@ -596,7 +665,7 @@ def draw_game_over(winner_text=None, color=None):
     """Renders Game Over Screen with results and Play Again button."""
     pen.clear()
 
-    # Title Header - Neon Gold/Yellow (neutral, distinct from P1 Pink and P2 Cyan)
+    # Title Header - Neon Gold/Yellow
     pen.goto(0, 150)
     pen.color("#ffe600")
     pen.write("DON'T TOUCH MY AREA", align="center", font=("Courier", 24, "bold"))
@@ -670,100 +739,7 @@ def update_hud():
     if time_left <= 0:
         trigger_game_over(None, None)
 
-def reset_game():
-    """Resets grid and player states for a new match."""
-    global grid
-
-    grid = [[0 for _ in range(COLS)] for _ in range(ROWS)]
-    t_stamper.clearstamps()
-    tr_stamper.clearstamps()
-    trail_stamps.clear()
-    trail_stamps_owner.clear()
-
-    # Reset Players
-    p1_start_r, p1_start_c = ROWS // 2, COLS // 5
-    pos1 = grid_to_screen(p1_start_r, p1_start_c)
-    p1.goto(pos1)
-    p1_glow.goto(pos1)
-    p1.direction = "stop"
-    p1.is_trail_active = False
-    p1_glow.showturtle()
-    p1.showturtle()
-
-    p2_start_r, p2_start_c = ROWS // 2, (COLS * 4) // 5
-    pos2 = grid_to_screen(p2_start_r, p2_start_c)
-    p2.goto(pos2)
-    p2_glow.goto(pos2)
-    p2.direction = "stop"
-    p2.is_trail_active = False
-    p2_glow.showturtle()
-    p2.showturtle()
-
-    # Spawn initial territory bases (5x5 tiles for comfortable control on 100x100 grid)
-    BASE_RADIUS = 2
-    p1_base = []
-    p2_base = []
-    for dr in range(-BASE_RADIUS, BASE_RADIUS + 1):
-        for dc in range(-BASE_RADIUS, BASE_RADIUS + 1):
-            r1, c1 = p1_start_r + dr, p1_start_c + dc
-            r2, c2 = p2_start_r + dr, p2_start_c + dc
-            grid[r1][c1] = 1
-            p1_base.append((r1, c1))
-            grid[r2][c2] = 2
-            p2_base.append((r2, c2))
-
-    render_captured_area(p1_base, 1)
-    render_captured_area(p2_base, 2)
-
-# ===========================================
-# MOUSE CLICK HANDLER
-# ===========================================
-def handle_click(x, y):
-    global game_state, selected_time, start_time_stamp
-
-    if game_state == "MENU":
-        # Check 10s button (-160 <= x <= -80, -70 <= y <= -30)
-        if -160 <= x <= -80 and -70 <= y <= -30:
-            selected_time = 10
-            play_sfx("click")
-            draw_menu()
-
-        # Check 30s button (-40 <= x <= 40, -70 <= y <= -30)
-        elif -40 <= x <= 40 and -70 <= y <= -30:
-            selected_time = 30
-            play_sfx("click")
-            draw_menu()
-
-        # Check 60s button (80 <= x <= 160, -70 <= y <= -30)
-        elif 80 <= x <= 160 and -70 <= y <= -30:
-            selected_time = 60
-            play_sfx("click")
-            draw_menu()
-
-        # Check Start button (-90 <= x <= 90, -155 <= y <= -105)
-        elif -90 <= x <= 90 and -155 <= y <= -105:
-            play_sfx("click")
-            pen.clear()
-            reset_game()
-            start_time_stamp = time.time()
-            game_state = "PLAYING"
-
-    elif game_state == "GAME_OVER":
-        # Check Play Again button (-90 <= x <= 90, -85 <= y <= -35)
-        if -90 <= x <= 90 and -85 <= y <= -35:
-            play_sfx("click")
-            clear_trail(3)
-            clear_trail(4)
-            t_stamper.clearstamps()
-            tr_stamper.clearstamps()
-            game_state = "MENU"
-            draw_menu()
-
-wn.onscreenclick(handle_click)
-
-# ===========================================
-# INITIAL HUD DRAW & GAME LOOP
-# ===========================================
+# Initial HUD / Menu Draw
 draw_menu()
 
 def game_loop():
