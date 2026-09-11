@@ -20,10 +20,12 @@ import turtle
 import time
 from collections import deque
 
-# Load Windows sound module (optional fallback if unavailable)
+# Load Windows audio modules (ctypes for looping BGM, winsound for concurrent SFX)
 try:
+    import ctypes                        # Windows C-types library for MCI background music playback
     import winsound                      # Import Windows audio module for low-latency sound effects
 except ImportError:
+    ctypes = None
     winsound = None                      # Graceful fallback if running on non-Windows environment
 
 # =============================================================================
@@ -44,8 +46,51 @@ if os.path.exists(bg_path):              # Verify background file exists on disk
 
 wn.tracer(0)                             # Turn off auto-screen update for manual frame control (prevents lag)
 
-# 2. Sound Effects Engine
+# 2. Audio Engine (BGM & Sound Effects)
 SOUND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "asset", "sounds")  # Sound folder path
+current_bgm = None                       # Track currently active background music track
+
+def play_bgm(track):
+    """Play background music track ('lobby' or 'playing') in a seamless loop using Windows MCI."""
+    global current_bgm
+    if current_bgm == track:             # Avoid restarting track if already playing
+        return
+    current_bgm = track                  # Update active BGM track identifier
+    if not ctypes:                       # Verify ctypes availability
+        return
+    try:
+        ctypes.windll.winmm.mciSendStringW("close bgm", None, 0, None)  # Close previous audio device
+        # Look for possible file variations (e.g., LobbyMusic.wav, lobby.wav, PlayingMusic.wav, playing.wav)
+        candidates = [
+            f"{track}.wav",
+            f"{track.capitalize()}.wav",
+            f"{track.capitalize()}Music.wav",
+            f"{track}Music.wav"
+        ]
+        target_path = None
+        for cand in candidates:
+            cand_path = os.path.join(SOUND_DIR, cand)
+            if os.path.exists(cand_path):
+                target_path = cand_path
+                break
+        if target_path:
+            short_buf = ctypes.create_unicode_buffer(260)  # Buffer for 8.3 short path name required by MCI
+            ctypes.windll.kernel32.GetShortPathNameW(os.path.abspath(target_path), short_buf, 260)
+            sp = short_buf.value         # Retrieve safe short path string
+            ctypes.windll.winmm.mciSendStringW(f'open {sp} type mpegvideo alias bgm', None, 0, None)  # Open device
+            ctypes.windll.winmm.mciSendStringW('play bgm repeat', None, 0, None)  # Play track in continuous loop
+    except Exception:
+        pass                             # Suppress any media subsystem exceptions silently
+
+def stop_bgm():
+    """Stop and close background music playback."""
+    global current_bgm
+    current_bgm = None                   # Reset active track identifier
+    if ctypes:
+        try:
+            ctypes.windll.winmm.mciSendStringW("close bgm", None, 0, None)  # Close and release MCI audio device
+        except Exception:
+            pass                         # Suppress exceptions
 
 def play_sfx(name):
     """Play a sound effect asynchronously without interrupting game execution."""
@@ -351,6 +396,7 @@ def trigger_game_over(winner_text, color=None):
     """Halt gameplay, hide player avatars, play victory/defeat sound, and display game over UI."""
     global game_state                    # Access global game_state variable
     game_state = "GAME_OVER"             # Switch active state to GAME_OVER
+    stop_bgm()                           # Stop playing match background music
     p1.hideturtle()                      # Hide Player 1 core avatar
     p1_glow.hideturtle()                 # Hide Player 1 glow halo
     p2.hideturtle()                      # Hide Player 2 core avatar
@@ -420,7 +466,7 @@ def update_game_step():
         trigger_game_over("IT'S A DRAW! (HEAD-ON COLLISION)", "#ffe600")  # Declare draw match
         return
 
-    # Check 2: Enemy Trail Cutting Collision ("ชนหางหาย")
+    # Check 2: Enemy Trail Cutting Collision
     target1 = grid[next_r1][next_c1] if (p1_moving and p1_valid) else None  # Tile Player 1 lands on
     target2 = grid[next_r2][next_c2] if (p2_moving and p2_valid) else None  # Tile Player 2 lands on
 
@@ -630,6 +676,7 @@ def handle_click(x, y):
             reset_game()                 # Reset board and player positions
             start_time_stamp = time.time()  # Record start timestamp
             game_state = "PLAYING"       # Transition state to PLAYING
+            play_bgm("playing")          # Switch to battle background music
 
     elif game_state == "GAME_OVER":      # Handle clicks on Game Over screen
         # Check 'PLAY AGAIN' Button (-90 <= x <= 90, -85 <= y <= -35)
@@ -641,6 +688,7 @@ def handle_click(x, y):
             tr_stamper.clearstamps()     # Erase trail stamps
             game_state = "MENU"          # Transition state back to MENU
             draw_menu()                  # Render main menu
+            play_bgm("lobby")            # Switch back to lobby background music
 
 # Bind Mouse Click Event
 wn.onscreenclick(handle_click)           # Attach click handler function to screen click event
@@ -787,8 +835,9 @@ def update_hud():
     if time_left <= 0:                   # Check if countdown reached zero
         trigger_game_over(None, None)    # Trigger game over by score calculation
 
-# Initial Menu Render
+# Initial Menu Render & BGM Playback
 draw_menu()                              # Draw Main Menu on initial startup
+play_bgm("lobby")                        # Start playing lobby background music
 
 def game_loop():
     """Master game loop: Update physics tick, refresh HUD, render frame, and schedule next tick."""
@@ -798,9 +847,9 @@ def game_loop():
 
     try:
         wn.update()                      # Render all buffered draw calls to screen in one frame
-        wn.ontimer(game_loop, 25)        # Schedule next game loop tick in 25 ms (~40 FPS)
+        wn.ontimer(game_loop, 25)        # Schedule next game loop tick in 25 ms (~40 FPS) and significantly for player Speed 
     except (turtle.Terminator, Exception):
-        pass                             # Handle clean exit when window is closed
+        stop_bgm()                       # Stop background music playback cleanly on exit
 
 # Launch Game Loop & Event Listener
 game_loop()                              # Start game loop cycle
